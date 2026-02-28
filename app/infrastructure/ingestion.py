@@ -1,84 +1,85 @@
-import docker
-import uuid
+"""
+Repository ingestion: clone into a temporary directory on the host.
+
+Uses subprocess + tempfile (no Docker). cleanup_volume removes the directory with shutil.rmtree.
+"""
+
 import logging
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-class DockerClientSingleton:
-    _instance = None
-    
-    @classmethod
-    def get_client(cls):
-        """Lazy-loads the Docker client."""
-        if cls._instance is None:
-            try:
-                cls._instance = docker.from_env()
-            except Exception as e:
-                logger.error(f"Failed to initialize Docker client: {e}")
-                raise RuntimeError("Docker daemon is not running or accessible")
-        return cls._instance
 
 def ingest_repository(repo_url: str) -> dict:
     """
-    Clones a validated repository into an ephemeral Docker volume.
-    Returns the volume name and the local path where it can be mounted.
-    """
-    client = DockerClientSingleton.get_client()
+    Clones a validated repository into a temporary local directory on the host.
 
-    # Generate unique identifiers
-    scan_uuid = str(uuid.uuid4())
-    volume_name = f"scan_volume_{scan_uuid}"
-    
-    logger.info(f"Creating isolated volume: {volume_name}")
-    # Create the volume to store the code
-    volume = client.volumes.create(name=volume_name)
-    
-    container_name = f"clone_{scan_uuid}"
-    logger.info(f"Starting ephemeral clone container {container_name} for {repo_url}")
-    
+    Runs `git clone [repo_url]` into a new temp directory. Returns the absolute
+    local path so the worker can read files directly.
+
+    Returns:
+        dict with:
+            - container_id: absolute path to the cloned repo (used as handle for cleanup)
+            - local_path: same absolute path
+    """
     try:
-        # Run the container to clone with resource limits
-        container = client.containers.run(
-            image="alpine/git",
-            command=["clone", repo_url, "/data/repo"],
-            name=container_name,
-            remove=True,
-            volumes={
-                volume_name: {'bind': '/data', 'mode': 'rw'}
-            },
-            mem_limit='512m',         # Restrict Memory to 512 Megabytes
-            nano_cpus=500000000,      # Restrict CPU to 0.5 Cores
-            detach=False              # Block until clone concludes
+        clone_dir = tempfile.mkdtemp(prefix="scan_repo_")
+        abs_path = Path(clone_dir).resolve()
+    except OSError as e:
+        logger.error("Failed to create temp directory: %s", e)
+        raise RuntimeError(f"Failed to create temp directory: {e}") from e
+
+    logger.info("Cloning %s into %s", repo_url, abs_path)
+
+    try:
+        result = subprocess.run(
+            ["git", "clone", "--depth", "1", repo_url, "."],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(abs_path),
         )
-        
-        logger.info(f"Clone successful into volume {volume_name}")
-        return {
-            "volume_name": volume_name,
-            "container_id": volume_name,
-            "local_path": "/data/repo"
-        }
-    except docker.errors.ContainerError as e:
-        # Extract the actual standard error from the container if available
-        error_msg = e.stderr.decode('utf-8').strip() if e.stderr else str(e)
-        logger.error(f"Clone failed: {error_msg}")
-        # Clean up volume on failure
-        volume.remove()
-        raise RuntimeError(f"Failed to clone repository: {error_msg}")
+    except FileNotFoundError:
+        shutil.rmtree(abs_path, ignore_errors=True)
+        raise RuntimeError("git is not installed or not on PATH") from None
+    except subprocess.TimeoutExpired:
+        shutil.rmtree(abs_path, ignore_errors=True)
+        raise RuntimeError("git clone timed out after 300s") from None
     except Exception as e:
-        logger.error(f"Unexpected error during ingestion: {e}")
-        volume.remove()
-        raise
+        shutil.rmtree(abs_path, ignore_errors=True)
+        logger.exception("Unexpected error during git clone")
+        raise RuntimeError(f"Failed to clone repository: {e}") from e
 
-def cleanup_volume(volume_name: str):
+    if result.returncode != 0:
+        err = (result.stderr or result.stdout or "").strip()
+        shutil.rmtree(abs_path, ignore_errors=True)
+        logger.error("Clone failed: %s", err)
+        raise RuntimeError(f"Failed to clone repository: {err}")
+
+    logger.info("Clone successful: %s", abs_path)
+    path_str = str(abs_path)
+    return {
+        "container_id": path_str,
+        "local_path": path_str,
+    }
+
+
+def cleanup_volume(volume_name_or_path: str) -> None:
     """
-    Removes the specified Docker volume to prevent storage bloat.
+    Removes the cloned repository directory.
+
+    volume_name_or_path is the absolute path returned by ingest_repository
+    (previously called container_id). Uses shutil.rmtree to delete the directory.
     """
+    path = Path(volume_name_or_path)
+    if not path.is_dir():
+        logger.warning("Cleanup path is not a directory or does not exist: %s", volume_name_or_path)
+        return
     try:
-        client = DockerClientSingleton.get_client()
-        volume = client.volumes.get(volume_name)
-        volume.remove()
-        logger.info(f"Successfully cleaned up volume: {volume_name}")
-    except docker.errors.NotFound:
-        logger.warning(f"Volume {volume_name} not found for cleanup.")
-    except Exception as e:
-        logger.error(f"Failed to clean up volume {volume_name}: {e}")
+        shutil.rmtree(path, ignore_errors=False)
+        logger.info("Successfully cleaned up directory: %s", path)
+    except OSError as e:
+        logger.error("Failed to clean up directory %s: %s", path, e)

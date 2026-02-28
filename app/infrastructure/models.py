@@ -25,20 +25,23 @@ class Project(Base):
 
 class Scan(Base):
     __tablename__ = "scans"
-
+    
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("target_projects.id"))
     status = Column(SqlEnum(ScanStatus), default=ScanStatus.PENDING)
     initiated_at = Column(DateTime, default=datetime.utcnow)
     finished_at = Column(DateTime, nullable=True)
-
+    
     # Ingestion context
     container_id = Column(String(255), nullable=True)
     local_path = Column(String(512), nullable=True)
+    
+    # Scoring & Routing
+    score = Column(Integer, nullable=True)
+    grade = Column(String(2), nullable=True)
 
-    # Vibe-to-Value audit result (from vibe_audit_engine)
-    vibe_to_value_score = Column(Integer, nullable=True)
-    integrated_report = Column(Text, nullable=True)  # JSON payload
+    # Full ScanReport JSON for frontend (id, projectName, score, vulnerabilities, dataFlow, etc.)
+    report_payload = Column(Text, nullable=True)
 
     project = relationship("Project", back_populates="scans")
     vulnerabilities = relationship("Vulnerability", back_populates="scan")
@@ -54,6 +57,8 @@ class Vulnerability(Base):
     description = Column(Text)
     file_path = Column(String(512))
     line_number = Column(Integer)
+    
+    remediation_tip = Column(Text, nullable=True)
     
     scan = relationship("Scan", back_populates="vulnerabilities")
 
