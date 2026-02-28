@@ -82,7 +82,8 @@ async def trigger_scan(request: Request, project_id: int, db: AsyncSession = Dep
 
 
 @router.get("/{scan_id}")
-async def get_scan_status(scan_id: int, db: AsyncSession = Depends(get_db)):
+@limiter.limit("30/minute")
+async def get_scan_status(request: Request, scan_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(Scan)
         .where(Scan.id == scan_id)

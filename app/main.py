@@ -1,18 +1,36 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from app.api.v1 import router as api_v1_router
 from app.core.config import settings
 from app.core.security import setup_security
 from app.core.logging import setup_logging
+import logging
 
 # Initialize logging
 setup_logging()
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
 
-# Setup CORS and Rate Limiting
+
+@app.exception_handler(Exception)
+async def global_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
+    """
+    Ensure 500 responses never leak stack traces, internal IPs, or PII to the client.
+    Log full details server-side only.
+    """
+    logger.exception("Unhandled exception: %s", exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error"},
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
+
+
+# Setup CORS and Rate Limiting (after exception handler so handler is used)
 setup_security(app)
 
 # Health check
