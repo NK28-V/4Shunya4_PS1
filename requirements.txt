@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+sqlalchemy[asyncio]
+asyncpg
+alembic
+pydantic-settings
+celery
+redis
+python-dotenv
+psycopg2-binary
+slowapi
+docker
+pytest
