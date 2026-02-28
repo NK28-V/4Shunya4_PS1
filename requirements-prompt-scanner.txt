@@ -3,6 +3,18 @@
 # Layer 3 (LLM):  pip install google-genai
 # Install both: pip install -r requirements-prompt-scanner.txt
 # Set GOOGLE_API_KEY or GEMINI_API_KEY for Layer 3.
-
+fastapi
+uvicorn[standard]
+sqlalchemy[asyncio]
+asyncpg
+alembic
+pydantic-settings
+celery
+redis
+python-dotenv
+psycopg2-binary
+slowapi
+docker
+pytest
 yara-python>=4.5.0
 google-genai>=1.0.0

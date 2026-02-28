@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import sys
+import re   
 from pathlib import Path
 
 # Ensure project root is on path for backend and root-level modules
@@ -24,6 +25,12 @@ from backend.compliance_core.ast_scanner import scan_python_file
 from backend.compliance_core.adapters.pii_adapter import PiiAdapter
 
 from scoring_algorithm import build_result_payload
+
+# Regex to detect hardcoded secrets / API keys in source (for integrated_report)
+_SECRET_PATTERN = re.compile(
+    r"(?:SECRET|API_KEY|TOKEN|PASSWORD)\s*=\s*[\'\"][^\'\"]+[\'\"]",
+    re.IGNORECASE,
+)
 
 
 def _prompt_result_to_dict(result) -> dict:
@@ -76,6 +83,10 @@ def run_audit(target_python_path: str | Path) -> dict:
     pii_violations = pii_adapter.scan_result_to_violations(pii_scan_result)
     compliance_violations.extend(v.to_dict() for v in pii_violations)
 
+    # Quick regex scan for hardcoded secrets / API keys in file content
+    secret_matches = _SECRET_PATTERN.findall(content)
+    secrets_count = len(secret_matches)
+
     # 4. Integrated Report (schema expected by scoring_algorithm)
     integrated_report = {
         "target_file": str(path),
@@ -83,6 +94,7 @@ def run_audit(target_python_path: str | Path) -> dict:
         "compliance_violations": compliance_violations,
         "soc2_violations": soc2_violations,
         "pii_scan_results": [pii_scan_result.to_dict()],
+        "secrets_or_api_keys": secrets_count,
     }
 
     # 5. Final Vibe-to-Value score and payload
