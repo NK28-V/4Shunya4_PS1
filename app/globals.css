@@ -24,3 +24,25 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: spin 2s linear infinite;
+}
+
+/* .animate-spin-slow {
+  animation: spin-slow 12s linear infinite;
+} */
+
+@keyframes pulseViolation {
+  0% { box-shadow: 0 0 0px rgba(225, 6, 0, 0.6); }
+  50% { box-shadow: 0 0 15px rgba(225, 6, 0, 0.9); }
+  100% { box-shadow: 0 0 0px rgba(225, 6, 0, 0.6); }
+}
+
+.gdpr-violation {
+  animation: pulseViolation 1.5s infinite;
+}
