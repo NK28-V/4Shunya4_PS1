@@ -1,13 +1,12 @@
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, Suspense } from "react"
+import { useSearchParams } from "next/navigation"
 import VibeScorecard from "@/components/vibescorecard"
 import type { ScanReport } from "@/lib/types"
 import ErrorBoundary from "@/components/ErrorBoundary"
 import ComplianceFlow from "@/components/ComplianceFlow"
-
-const SCAN_ID = "scan_001"
 
 function getScanApiBase(): string {
   const base = process.env.NEXT_PUBLIC_SCAN_API_BASE
@@ -28,23 +27,37 @@ function ProcessingSkeleton() {
   return (
     <main className="min-h-screen bg-[#0B0B0C] text-white p-8 transition-all duration-700 ease-out">
       <div className="flex justify-between items-center border-b border-zinc-800 pb-4">
-        <div className="h-6 w-48 bg-zinc-800 animate-pulse rounded" />
-        <div className="h-6 w-20 bg-zinc-800 animate-pulse rounded" />
+        <div className="h-6 w-48 bg-zinc-800/80 animate-pulse rounded-md" />
+        <div className="h-6 w-20 bg-zinc-800/80 animate-pulse rounded-md" />
       </div>
       <section className="mt-10 flex justify-center">
-        <div className="w-64 h-64 rounded-full border border-zinc-800 animate-pulse" />
+        <div className="relative w-64 h-64 flex items-center justify-center">
+          <div className="absolute w-64 h-64 rounded-full border-2 border-zinc-800 bg-zinc-900/50 animate-pulse" />
+          <div className="absolute w-48 h-48 rounded-full bg-zinc-800/40 animate-pulse" style={{ animationDelay: "150ms" }} />
+          <div className="absolute text-zinc-500 text-sm">Analyzing…</div>
+        </div>
       </section>
       <section className="mt-14 space-y-4">
-        <div className="h-4 w-32 bg-zinc-800 animate-pulse rounded" />
+        <div className="h-4 w-32 bg-zinc-800/80 animate-pulse rounded-md" style={{ animationDelay: "100ms" }} />
         <div className="grid grid-cols-2 gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-20 bg-zinc-800/60 animate-pulse rounded" />
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="h-20 bg-zinc-800/60 animate-pulse rounded-lg"
+              style={{ animationDelay: `${(i + 1) * 80}ms` }}
+            />
           ))}
         </div>
       </section>
       <section className="mt-16">
-        <div className="h-6 w-48 bg-zinc-800 animate-pulse rounded mb-6" />
-        <div className="w-full h-[500px] bg-zinc-900/50 border border-zinc-800 rounded-md animate-pulse" />
+        <div
+          className="h-6 w-48 bg-zinc-800/80 animate-pulse rounded-md mb-6"
+          style={{ animationDelay: "200ms" }}
+        />
+        <div
+          className="w-full h-[500px] bg-zinc-900/50 border border-zinc-800 rounded-lg animate-pulse"
+          style={{ animationDelay: "250ms" }}
+        />
       </section>
     </main>
   )
@@ -85,12 +98,24 @@ function SupplyChainAlertModal({
 }
 
 export default function Dashboard() {
+  return (
+    <Suspense fallback={<ProcessingSkeleton />}>
+      <DashboardContent />
+    </Suspense>
+  )
+}
+
+function DashboardContent() {
+  const searchParams = useSearchParams()
+  const scanId = searchParams.get("scanId") ?? ""
+
   const [acknowledgedSupplyChainAlert, setAcknowledgedSupplyChainAlert] =
     useState(false)
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["scan", SCAN_ID],
-    queryFn: () => fetchScan(SCAN_ID),
+    queryKey: ["scan", scanId],
+    queryFn: () => fetchScan(scanId),
+    enabled: !!scanId,
     refetchInterval: (query) =>
       query.state.data?.status === "PROCESSING" ? 5000 : false,
   })
@@ -110,6 +135,20 @@ export default function Dashboard() {
 
   const showSupplyChainModal =
     hasCriticalAiHallucinated && !acknowledgedSupplyChainAlert
+
+  if (!scanId) {
+    return (
+      <div className="min-h-screen bg-[#0B0B0C] flex flex-col items-center justify-center gap-4 text-zinc-400">
+        <p>No scan ID provided.</p>
+        <a
+          href="/"
+          className="text-[#E10600] hover:underline"
+        >
+          Start a new scan
+        </a>
+      </div>
+    )
+  }
 
   if (error) {
     return (

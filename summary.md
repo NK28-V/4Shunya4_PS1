@@ -15,7 +15,7 @@
 - **Scoring** — Two paths: (1) **Vibe-to-Value** (root `scoring_algorithm.py` + `constants.py`) for single-file audit; (2) **Risk score + grade** (`app/domain/scoring.RiskScorer`) for worker pipeline (0–100, grade A–F).
 - **Remediation** — `app/domain/remediation` maps finding titles to actionable fixes (eval → ast.literal_eval, os.system → subprocess, etc.).
 - **Backend API** — FastAPI with projects, scan trigger, and scan status; Celery worker **ingests via git clone** (subprocess + tempfile, no Docker), runs a **unified scanning pipeline** (domain + prompt-injection + compliance core + PII), and persists score, grade, vulnerabilities, violations, and full **ScanReport JSON** (including **dataFlow** for the frontend compliance graph). GET /scans/{id} returns ScanReport-shaped payload.
-- **Frontend** — Next.js (vibe-frontend) with landing page, dashboard, score gauge, compliance flow visualization (dataFlow), and supply-chain alert modal.
+- **Frontend** — Next.js (vibe-frontend): **Landing** has GitHub Repository URL input; on "Run Production Scan" it calls POST /api/v1/projects/ then POST /api/v1/scans/{project_id}/trigger and navigates to **/dashboard?scanId={scan_id}**. **Dashboard** reads `scanId` from the URL (useSearchParams), polls GET /api/v1/scans/{scanId} every 5s while status is PROCESSING, shows a skeletal loading UI, and displays the supply-chain modal when any vulnerability has **AI_HALLUCINATED** in metadata.
 
 **Tagline:** *From Vibe to Value. Production-grade security for AI-generated applications.*
 
@@ -33,7 +33,7 @@
 | Prompt scanner (legacy/CLI) | Python (regex, optional YARA, optional Google Gen AI / Gemini) |
 | Compliance engine (legacy/CLI) | backend/compliance_core: SOC2, GDPR, AST PII, PiiAdapter |
 | Frontend | Next.js (App Router), React, TypeScript, TanStack Query, Tailwind |
-b| Repo ingestion | **subprocess + tempfile:** `git clone` into temp dir on host; **cleanup:** `shutil.rmtree` (no Docker). See `app/infrastructure/ingestion.py`. |
+| Repo ingestion | **subprocess + tempfile:** `git clone` into temp dir on host; **cleanup:** `shutil.rmtree` (no Docker). See `app/infrastructure/ingestion.py`. |
 
 ---
 
@@ -42,8 +42,8 @@ b| Repo ingestion | **subprocess + tempfile:** `git clone` into temp dir on host
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  vibe-frontend (Next.js)                                                 │
-│  Landing → Dashboard → Score Gauge, VibeScorecard, ComplianceFlow       │
-│  Fetches: GET /api/v1/scans/{scanId}  (proxy to backend or direct)       │
+│  Landing: GitHub URL input → POST /projects/ → POST /scans/{id}/trigger │
+│  → /dashboard?scanId=… → poll GET /scans/{scanId} every 5s if PROCESSING │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -181,15 +181,15 @@ Hackx4.0/
     │   ├── favicon.ico
     │   ├── globals.css
     │   ├── layout.tsx
-    │   ├── page.tsx                # Landing: "VIBE-AUDIT", Run Production Scan → /dashboard
-    │   ├── api/
+│   ├── page.tsx                # Landing: GitHub URL input; POST project + trigger → /dashboard?scanId=
+│   ├── api/
     │   │   └── v1/
     │   │       └── scans/
     │   │           └── [scanId]/
     │   │               └── route.ts # Proxy or direct fetch to backend scan API
     │   ├── dashboard/
-    │   │   ├── layout.tsx
-    │   │   └── page.tsx            # Score gauge, VibeScorecard, ComplianceFlow, supply-chain modal
+│   │   ├── layout.tsx
+│   │   └── page.tsx            # Dashboard: scanId from useSearchParams; TanStack Query + 5s poll; skeleton; AI_HALLUCINATED modal
     │   └── hooks/
     │       └── useComplianceGraph.ts
     ├── components/
@@ -254,8 +254,8 @@ Hackx4.0/
 
 ### 5.7 Frontend (vibe-frontend)
 
-- **Landing:** Dark theme, “VIBE-AUDIT”, “Run Production Scan” → `/dashboard`.
-- **Dashboard:** Fetches scan by ID (env `NEXT_PUBLIC_SCAN_API_BASE`); expects **ScanReport** (id, projectName, score, status, vulnerabilities, **dataFlow**); shows processing skeleton; score gauge (0–100, color by band); VibeScorecard; **Compliance Data Flow** from `dataFlow`; modal for critical AI-hallucinated supply chain alert. GO/NO-GO by score &lt; 60.
+- **Landing (app/page.tsx):** Text input for **GitHub Repository URL**. On "Run Production Scan": (a) POST **/api/v1/projects/** with `{ name: "Dynamic Project", repository_url }` → capture project `id`; (b) POST **/api/v1/scans/{project_id}/trigger** → capture `scan_id`; then navigate to **/dashboard?scanId={scan_id}**. Uses `NEXT_PUBLIC_SCAN_API_BASE`. Loading and error states; no hardcoded scan ID.
+- **Dashboard (app/dashboard/page.tsx):** Reads **scanId** from URL via **useSearchParams**; TanStack Query with `queryKey: ["scan", scanId]` and **refetchInterval: 5000** when `status === "PROCESSING"`. Non-blocking **skeletal UI** (ProcessingSkeleton) during loading. **Supply-chain modal** when any vulnerability has **CRITICAL** severity and **AI_HALLUCINATED** in `metadata`. Score gauge, VibeScorecard, Compliance Data Flow from `dataFlow`. GO/NO-GO by score &lt; 60.
 
 ---
 
@@ -263,7 +263,7 @@ Hackx4.0/
 
 - **Done:** Prompt injection scanner (3 layers), backend/compliance_core (SOC2/GDPR + AST PII + PiiAdapter), root scoring_algorithm + constants, **app.domain** (security, compliance, ast_scanner, scoring, remediation), FastAPI app with projects and scans endpoints, **unified Celery worker** (git-based ingestion into temp dir, no Docker; domain + prompt-injection + compliance core + PII; single ScanReport with **dataFlow**; **report_payload** on Scan), DB models including **Vulnerability** (remediation_tip) and Scan **score**/**grade**/**report_payload**, **GET /scans/{id}** returns **ScanReport** shape, Alembic migration for report_payload, vibe-frontend landing and dashboard.
 - **Two pipelines:** (1) **Worker:** ingest (subprocess + tempfile) → unified scanners (domain + prompt_injection_scanner + compliance_core + PII) → aggregate → RiskScorer → persist report_payload + Vulnerability + ComplianceViolation + cleanup with shutil.rmtree. (2) **CLI/single-file:** vibe_audit_engine.run_audit → prompt_injection_scanner + backend/compliance_core + scoring_algorithm.
-- **Frontend:** Uses a fixed `SCAN_ID` (“scan_001”) and env for API base; expects ScanReport with **dataFlow**; can be extended to project/scan creation and dynamic scan IDs.
+- **Frontend (Phase 2):** No hardcoded scan ID. Landing collects GitHub URL, creates project and triggers scan via API, then redirects to **/dashboard?scanId=…**. Dashboard reads **scanId** from query params, polls GET /scans/{scanId} every 5s while PROCESSING, shows skeletal loading UI, and triggers the supply-chain modal when **AI_HALLUCINATED** appears in vulnerability metadata.
 - **Repro:** Backend needs PostgreSQL and Redis; worker needs **git on PATH** and same DB/Redis (no Docker). Frontend needs `NEXT_PUBLIC_SCAN_API_BASE` pointing at backend.
 
 ---
