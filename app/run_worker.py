@@ -31,9 +31,9 @@ if __name__ == "__main__":
     # the TypeError: main() takes 0 positional arguments but 1 was given
     print("Executing celery worker command...")
     
-    # The '/root/.local/bin/celery' absolute path guarantees subprocess finds it natively.
+    # Run Celery as a python module to bypass distroless shebang limitations
     try:
-        subprocess.run(["/root/.local/bin/celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info"], check=True)
+        subprocess.run([sys.executable, "-m", "celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info"], check=True)
     except Exception as e:
         print(f"Error starting celery: {e}")
         sys.exit(1)
