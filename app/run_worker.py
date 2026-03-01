@@ -24,11 +24,17 @@ if __name__ == "__main__":
     thread = threading.Thread(target=run_dummy_server, daemon=True)
     thread.start()
 
-    # Start the Celery worker in the main thread
-    # This assumes your Celery app is defined in worker.celery_app
-    print("Starting Celery worker...")
+    import subprocess
+    import sys
     
-    # We pass the arguments as a list.  The first element is the program name.
-    # The 'worker' command starts the worker.  '-A worker.celery_app' points to our app.
+    # We use subprocess to run the Celery worker directly, which avoids 
+    # the TypeError: main() takes 0 positional arguments but 1 was given
+    print("Executing celery worker command...")
+    
+    # The 'worker' command starts the worker. '-A app.worker.celery_app' points to our app.
     # '--loglevel=info' sets the log level.
-    celery_main(["celery", "-A", "worker.celery_app", "worker", "--loglevel=info"])
+    try:
+        subprocess.run(["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info"], check=True)
+    except Exception as e:
+        print(f"Error starting celery: {e}")
+        sys.exit(1)
