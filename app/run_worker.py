@@ -31,10 +31,9 @@ if __name__ == "__main__":
     # the TypeError: main() takes 0 positional arguments but 1 was given
     print("Executing celery worker command...")
     
-    # The 'worker' command starts the worker. '-A app.worker.celery_app' points to our app.
-    # '--loglevel=info' sets the log level.
+    # The '/root/.local/bin/celery' absolute path guarantees subprocess finds it natively.
     try:
-        subprocess.run(["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info"], check=True)
+        subprocess.run(["/root/.local/bin/celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info"], check=True)
     except Exception as e:
         print(f"Error starting celery: {e}")
         sys.exit(1)
