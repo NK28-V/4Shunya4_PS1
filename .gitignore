@@ -34,5 +34,10 @@ dist/
 htmlcov/
 .tox/
 
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+
 # Optional: keep .agent if you want it in repo (remove next line to track .agent)
 # .agent/
